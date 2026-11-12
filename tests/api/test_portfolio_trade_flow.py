@@ -85,6 +85,37 @@ def test_buy_sell_position_matches_financial_oracle():
                     assert profile["name"] == symbol
                     symbol = profile["symbol"]
 
+            activities_response = client.get(
+                "/api/v1/activities",
+                params={"symbol": symbol},
+            )
+            activities_response.raise_for_status()
+
+            activities = activities_response.json()["activities"]
+            assert {item["id"] for item in activities} == set(created_ids)
+
+            actual_cash_flow = Decimal("0")
+
+            for activity, trade in zip(
+                sorted(activities, key=lambda item: item["date"]),
+                trades,
+                strict=True,
+            ):
+                assert activity["type"] == trade.side
+                assert Decimal(str(activity["quantity"])) == trade.quantity
+                assert Decimal(str(activity["unitPrice"])) == trade.unit_price
+                assert Decimal(str(activity["fee"])) == trade.fee
+
+                notional = Decimal(str(activity["value"]))
+                assert notional == trade.quantity * trade.unit_price
+
+                if activity["type"] == "BUY":
+                    actual_cash_flow -= notional + trade.fee
+                else:
+                    actual_cash_flow += notional - trade.fee
+
+            assert actual_cash_flow == expected.net_cash_flow
+
             actual_quantity = None
 
             for _ in range(10):
