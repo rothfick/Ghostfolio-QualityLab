@@ -1,0 +1,61 @@
+id,area,risk,priority,layer,status,scenario,nodeid,prerequisite
+FIN-001,financial,R02,P0,unit,implemented,Partial sale with fees,tests/financial/test_financial_oracle.py::test_position_and_cash_flow[partial-sale-with-fees],none
+FIN-002,financial,R01,P0,unit,implemented,Full position closure,tests/financial/test_financial_oracle.py::test_position_and_cash_flow[fully-closed-position],none
+FIN-003,financial,R02,P0,unit,implemented,Fractional buy quantities,tests/financial/test_financial_oracle.py::test_position_and_cash_flow[fractional-quantities],none
+FIN-004,financial,R01,P1,unit,implemented,Empty ledger result,tests/financial/test_financial_oracle.py::test_position_and_cash_flow[empty-ledger],none
+FIN-005,financial,R02,P0,unit,implemented,Sell fee reduces proceeds,tests/financial/test_financial_oracle.py::test_sell_fee_reduces_proceeds,none
+FIN-006,financial,R01,P0,unit,planned,Aggregate successive buys,-,none
+FIN-007,financial,R02,P0,unit,planned,Aggregate successive sells cash flow,-,none
+FIN-008,financial,R02,P1,unit,planned,Zero fee trades,-,none
+FIN-009,financial,R02,P0,unit,planned,High precision fractional fees,-,none
+FIN-010,financial,R02,P0,unit,planned,Large notional Decimal accuracy,-,none
+FIN-011,financial,R02,P0,unit,planned,Realized profit calculation,-,cost_basis_policy
+FIN-012,financial,R03,P1,unit,planned,Unsupported trade side rejection,-,none
+PORT-001,portfolio,R01,P0,integration,implemented,Partial sell position versus oracle,tests/api/test_portfolio_trade_flow.py::test_trade_scenarios_match_financial_oracle[partial-sale-with-fees],none
+PORT-002,portfolio,R01,P0,integration,implemented,Full close position versus oracle,tests/api/test_portfolio_trade_flow.py::test_trade_scenarios_match_financial_oracle[full-position-closure],none
+PORT-003,portfolio,R02,P0,integration,implemented,Fractional trade position versus oracle,tests/api/test_portfolio_trade_flow.py::test_trade_scenarios_match_financial_oracle[fractional-quantities],none
+PORT-004,portfolio,R01,P0,integration,implemented,Multi leg trade position versus oracle,tests/api/test_portfolio_trade_flow.py::test_trade_scenarios_match_financial_oracle[multi-leg-trading],none
+PORT-005,portfolio,R01,P0,integration,planned,Buy only position quantity,-,none
+PORT-006,portfolio,R01,P0,integration,planned,Successive buy aggregation,-,none
+PORT-007,portfolio,R01,P0,integration,planned,Successive sell aggregation,-,none
+PORT-008,portfolio,R02,P1,integration,planned,Zero fee activity values,-,none
+PORT-009,portfolio,R02,P0,integration,planned,Decimal price persistence,-,precision_policy
+PORT-010,portfolio,R01,P1,integration,planned,Transaction chronology in activity history,-,none
+PORT-011,portfolio,R05,P0,integration,planned,Two symbols isolated within one portfolio,-,none
+PORT-012,portfolio,R01,P0,integration,planned,Position recalculation after activity deletion,-,none
+PORT-013,portfolio,R05,P0,integration,planned,Independent assets with similar labels,-,asset_identity_review
+PORT-014,portfolio,R01,P1,integration,planned,Reopen a fully closed position,-,api_behavior_review
+CON-001,contracts,R03,P1,integration,planned,Create activity response contract,-,api_contract_review
+CON-002,contracts,R03,P1,integration,planned,Read activity response contract,-,api_contract_review
+CON-003,contracts,R03,P1,integration,planned,Holdings response contract,-,api_contract_review
+CON-004,contracts,R03,P0,integration,planned,Missing quantity rejection,-,api_contract_review
+CON-005,contracts,R03,P1,integration,planned,Zero quantity validation,-,api_contract_review
+CON-006,contracts,R03,P0,integration,planned,Negative quantity validation,-,api_contract_review
+CON-007,contracts,R03,P1,integration,planned,Invalid activity type rejection,-,api_contract_review
+CON-008,contracts,R03,P1,integration,planned,Malformed activity date rejection,-,api_contract_review
+CON-009,contracts,R03,P1,integration,planned,Unknown activity identifier returns not found,-,api_contract_review
+CON-010,contracts,R03,P1,integration,planned,Invalid currency code validation,-,api_contract_review
+AUTH-001,security,R04,P0,integration,planned,Holdings access without JWT,-,none
+AUTH-002,security,R04,P0,integration,planned,Activity creation without JWT,-,none
+AUTH-003,security,R04,P0,integration,planned,Malformed bearer token rejection,-,none
+AUTH-004,security,R04,P1,integration,planned,Expired authentication token rejection,-,token_lifecycle_fixture
+AUTH-005,security,R04,P0,integration,planned,Cross user activity read denied,-,second_test_user
+AUTH-006,security,R04,P0,integration,planned,Cross user activity delete denied,-,second_test_user
+DATA-001,integrity,R05,P0,integration,planned,Cleanup after successful transaction workflow,-,cleanup_probe
+DATA-002,integrity,R05,P0,integration,planned,Cleanup after failed assertion,-,failure_injection_fixture
+DATA-003,integrity,R05,P0,integration,planned,Deleted activity returns 404,-,cleanup_probe
+DATA-004,integrity,R05,P0,integration,planned,One test does not modify another symbol,-,none
+DATA-005,integrity,R05,P0,integration,planned,Failed write creates no orphan activity,-,api_behavior_review
+DATA-006,integrity,R05,P1,integration,planned,Repeated execution does not accumulate data,-,isolated_environment
+E2E-001,e2e,R06,P1,e2e,planned,Interactive authentication workflow,-,browser_test_setup
+E2E-002,e2e,R06,P1,e2e,planned,Create buy through browser,-,browser_test_setup
+E2E-003,e2e,R06,P1,e2e,planned,Create sell through browser,-,browser_test_setup
+E2E-004,e2e,R06,P0,e2e,planned,UI holdings agree with backend API,-,browser_test_setup
+E2E-005,e2e,R06,P1,e2e,planned,Portfolio state persists after reload,-,browser_test_setup
+E2E-006,e2e,R06,P1,e2e,planned,Delete transaction in UI updates API,-,browser_test_setup
+REL-001,reliability,R07,P1,reliability,planned,Read after write consistency,-,isolated_environment
+REL-002,reliability,R07,P1,reliability,planned,Portfolio cache refresh consistency,-,isolated_environment
+REL-003,reliability,R07,P1,reliability,planned,API latency versus measured baseline,-,performance_baseline
+REL-004,reliability,R07,P1,reliability,planned,Controlled dependency failure diagnostics,-,fault_injection_environment
+HLT-001,health,R08,P1,integration,implemented,API liveness,tests/api/test_health.py::test_application_is_alive,none
+HLT-002,health,R08,P1,integration,implemented,API dependency health,tests/api/test_health.py::test_application_dependencies_are_healthy,none
