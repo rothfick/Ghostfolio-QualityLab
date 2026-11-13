@@ -11,7 +11,8 @@ import pytest
 from quality_lab.financial_oracle import Trade, calculate_ledger
 
 
-def test_buy_sell_position_matches_financial_oracle():
+@pytest.fixture
+def authenticated_api():
     token = os.getenv("GHOSTFOLIO_ACCESS_TOKEN")
 
     if not token:
@@ -22,16 +23,13 @@ def test_buy_sell_position_matches_financial_oracle():
         "http://localhost:3333",
     )
 
-    if urlparse(base_url).hostname not in {"localhost", "127.0.0.1"}:
-        pytest.fail("Financial write tests require a local Ghostfolio")
+    parsed_url = urlparse(base_url)
 
-    symbol = f"QLAB_{uuid4().hex[:12]}"
-    trades = [
-        Trade("BUY", Decimal("10"), Decimal("100"), Decimal("1")),
-        Trade("SELL", Decimal("4"), Decimal("120"), Decimal("2")),
-    ]
-    expected = calculate_ledger(trades)
-    created_ids = []
+    if (
+        parsed_url.scheme != "http"
+        or parsed_url.hostname not in {"localhost", "127.0.0.1"}
+    ):
+        pytest.fail("Write tests require a local HTTP Ghostfolio instance")
 
     with httpx.Client(base_url=base_url, timeout=20) as client:
         login = client.post(
@@ -39,132 +37,168 @@ def test_buy_sell_position_matches_financial_oracle():
             json={"accessToken": token},
         )
         login.raise_for_status()
+
         client.headers.update({
             "Authorization": f"Bearer {login.json()['authToken']}"
         })
 
-        existing = client.get(
+        created_ids = []
+
+        yield client, created_ids
+
+        cleanup_errors = []
+
+        # Delete only activities created by this test.
+        for activity_id in reversed(created_ids):
+            try:
+                response = client.delete(
+                    f"/api/v1/activities/{activity_id}"
+                )
+
+                if not response.is_success:
+                    cleanup_errors.append(
+                        f"DELETE {activity_id}: HTTP {response.status_code}"
+                    )
+            except httpx.HTTPError as error:
+                cleanup_errors.append(
+                    f"DELETE {activity_id}: {error}"
+                )
+
+        # Verify the deletion through an independent API read.
+        for activity_id in created_ids:
+            try:
+                response = client.get(
+                    f"/api/v1/activities/{activity_id}"
+                )
+
+                if response.status_code != 404:
+                    cleanup_errors.append(
+                        f"GET {activity_id}: expected 404, "
+                        f"got {response.status_code}"
+                    )
+            except httpx.HTTPError as error:
+                cleanup_errors.append(
+                    f"GET {activity_id}: {error}"
+                )
+
+        if cleanup_errors:
+            pytest.fail(
+                "Test data cleanup verification failed:\n"
+                + "\n".join(cleanup_errors)
+            )
+
+
+def test_buy_sell_position_matches_financial_oracle(authenticated_api):
+    client, created_ids = authenticated_api
+
+    symbol = f"QLAB_{uuid4().hex[:12]}"
+
+    trades = [
+        Trade("BUY", Decimal("10"), Decimal("100"), Decimal("1")),
+        Trade("SELL", Decimal("4"), Decimal("120"), Decimal("2")),
+    ]
+
+    expected = calculate_ledger(trades)
+
+    existing = client.get(
+        "/api/v1/activities",
+        params={"symbol": symbol},
+    )
+    existing.raise_for_status()
+
+    assert existing.json()["count"] == 0, (
+        f"Test symbol {symbol} already exists"
+    )
+
+    for index, trade in enumerate(trades):
+        date = datetime.now(timezone.utc) - timedelta(
+            days=7 - index
+        )
+
+        payload = {
+            "currency": "USD",
+            "dataSource": "MANUAL",
+            "date": date.isoformat().replace("+00:00", "Z"),
+            "fee": float(trade.fee),
+            "quantity": float(trade.quantity),
+            "symbol": symbol,
+            "type": trade.side,
+            "unitPrice": float(trade.unit_price),
+        }
+
+        response = client.post(
             "/api/v1/activities",
+            json=payload,
+        )
+        assert response.is_success, response.text
+
+        activity = response.json()
+        created_ids.append(activity["id"])
+
+        if trade.side == "BUY":
+            profile = activity["assetProfile"]
+
+            assert profile["dataSource"] == "MANUAL"
+            assert profile["name"] == symbol
+
+            symbol = profile["symbol"]
+
+    activities_response = client.get(
+        "/api/v1/activities",
+        params={"symbol": symbol},
+    )
+    activities_response.raise_for_status()
+
+    activities = activities_response.json()["activities"]
+
+    assert {item["id"] for item in activities} == set(created_ids)
+
+    actual_cash_flow = Decimal("0")
+
+    for activity, trade in zip(
+        sorted(activities, key=lambda item: item["date"]),
+        trades,
+        strict=True,
+    ):
+        assert activity["type"] == trade.side
+        assert Decimal(str(activity["quantity"])) == trade.quantity
+        assert Decimal(str(activity["unitPrice"])) == trade.unit_price
+        assert Decimal(str(activity["fee"])) == trade.fee
+
+        notional = Decimal(str(activity["value"]))
+        assert notional == trade.quantity * trade.unit_price
+
+        if activity["type"] == "BUY":
+            actual_cash_flow -= notional + trade.fee
+        else:
+            actual_cash_flow += notional - trade.fee
+
+    assert actual_cash_flow == expected.net_cash_flow
+
+    actual_quantity = None
+
+    for _ in range(10):
+        response = client.get(
+            "/api/v1/portfolio/holdings",
             params={"symbol": symbol},
         )
-        existing.raise_for_status()
+        response.raise_for_status()
 
-        assert existing.json()["count"] == 0, (
-            f"Test symbol {symbol} already has activities; "
-            "refusing to modify an existing position"
-        )
+        matching = [
+            item for item in response.json()["holdings"]
+            if item["assetProfile"]["symbol"] == symbol
+            and item["assetProfile"]["dataSource"] == "MANUAL"
+        ]
 
-        try:
-            for index, trade in enumerate(trades):
-                date = datetime.now(timezone.utc) - timedelta(
-                    days=7 - index
-                )
+        if matching:
+            actual_quantity = Decimal(str(matching[0]["quantity"]))
 
-                payload = {
-                    "currency": "USD",
-                    "dataSource": "MANUAL",
-                    "date": date.isoformat().replace("+00:00", "Z"),
-                    "fee": float(trade.fee),
-                    "quantity": float(trade.quantity),
-                    "symbol": symbol,
-                    "type": trade.side,
-                    "unitPrice": float(trade.unit_price),
-                }
+        if actual_quantity == expected.quantity:
+            break
 
-                response = client.post(
-                    "/api/v1/activities",
-                    json=payload,
-                )
-                assert response.is_success, response.text
-                activity = response.json()
-                created_ids.append(activity["id"])
+        time.sleep(0.5)
 
-                if trade.side == "BUY":
-                    profile = activity["assetProfile"]
-                    assert profile["dataSource"] == "MANUAL"
-                    assert profile["name"] == symbol
-                    symbol = profile["symbol"]
-
-            activities_response = client.get(
-                "/api/v1/activities",
-                params={"symbol": symbol},
-            )
-            activities_response.raise_for_status()
-
-            activities = activities_response.json()["activities"]
-            assert {item["id"] for item in activities} == set(created_ids)
-
-            actual_cash_flow = Decimal("0")
-
-            for activity, trade in zip(
-                sorted(activities, key=lambda item: item["date"]),
-                trades,
-                strict=True,
-            ):
-                assert activity["type"] == trade.side
-                assert Decimal(str(activity["quantity"])) == trade.quantity
-                assert Decimal(str(activity["unitPrice"])) == trade.unit_price
-                assert Decimal(str(activity["fee"])) == trade.fee
-
-                notional = Decimal(str(activity["value"]))
-                assert notional == trade.quantity * trade.unit_price
-
-                if activity["type"] == "BUY":
-                    actual_cash_flow -= notional + trade.fee
-                else:
-                    actual_cash_flow += notional - trade.fee
-
-            assert actual_cash_flow == expected.net_cash_flow
-
-            actual_quantity = None
-
-            for _ in range(10):
-                response = client.get(
-                    "/api/v1/portfolio/holdings",
-                    params={"symbol": symbol},
-                )
-                response.raise_for_status()
-
-                matching = [
-                    item for item in response.json()["holdings"]
-                    if item["assetProfile"]["symbol"] == symbol
-                    and item["assetProfile"]["dataSource"] == "MANUAL"
-                ]
-
-                if matching:
-                    actual_quantity = Decimal(
-                        str(matching[0]["quantity"])
-                    )
-
-                if actual_quantity == expected.quantity:
-                    break
-
-                time.sleep(0.5)
-
-            assert actual_quantity == expected.quantity, (
-                f"Ghostfolio: {actual_quantity}, "
-                f"financial oracle: {expected.quantity}"
-            )
-
-        finally:
-            cleanup_errors = []
-
-            for activity_id in reversed(created_ids):
-                try:
-                    response = client.delete(
-                        f"/api/v1/activities/{activity_id}"
-                    )
-                    if not response.is_success:
-                        cleanup_errors.append(
-                            f"{activity_id}: HTTP {response.status_code}"
-                        )
-                except httpx.HTTPError as error:
-                    cleanup_errors.append(
-                        f"{activity_id}: {error}"
-                    )
-
-            if cleanup_errors:
-                pytest.fail(
-                    "Activity cleanup failed: "
-                    + "; ".join(cleanup_errors)
-                )
+    assert actual_quantity == expected.quantity, (
+        f"Ghostfolio: {actual_quantity}, "
+        f"financial oracle: {expected.quantity}"
+    )
