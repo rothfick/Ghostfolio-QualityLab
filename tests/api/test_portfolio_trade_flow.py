@@ -88,16 +88,45 @@ def authenticated_api():
             )
 
 
-def test_buy_sell_position_matches_financial_oracle(authenticated_api):
+@pytest.mark.parametrize(
+    "trades",
+    [
+        pytest.param(
+            [
+                Trade("BUY", Decimal("10"), Decimal("100"), Decimal("1")),
+                Trade("SELL", Decimal("4"), Decimal("120"), Decimal("2")),
+            ],
+            id="partial-sale-with-fees",
+        ),
+        pytest.param(
+            [
+                Trade("BUY", Decimal("3"), Decimal("75"), Decimal("0.50")),
+                Trade("SELL", Decimal("3"), Decimal("80"), Decimal("1.25")),
+            ],
+            id="full-position-closure",
+        ),
+        pytest.param(
+            [
+                Trade("BUY", Decimal("1.25"), Decimal("80"), Decimal("0.20")),
+                Trade("SELL", Decimal("0.40"), Decimal("90"), Decimal("0.10")),
+            ],
+            id="fractional-quantities",
+        ),
+        pytest.param(
+            [
+                Trade("BUY", Decimal("5"), Decimal("100"), Decimal("1")),
+                Trade("SELL", Decimal("2"), Decimal("125"), Decimal("1")),
+                Trade("BUY", Decimal("3"), Decimal("90"), Decimal("0.50")),
+                Trade("SELL", Decimal("1"), Decimal("110"), Decimal("0.50")),
+            ],
+            id="multi-leg-trading",
+        ),
+    ],
+)
+def test_trade_scenarios_match_financial_oracle(authenticated_api, trades):
     client, created_ids = authenticated_api
 
     symbol = f"QLAB_{uuid4().hex[:12]}"
-
-    trades = [
-        Trade("BUY", Decimal("10"), Decimal("100"), Decimal("1")),
-        Trade("SELL", Decimal("4"), Decimal("120"), Decimal("2")),
-    ]
-
     expected = calculate_ledger(trades)
 
     existing = client.get(
@@ -135,13 +164,15 @@ def test_buy_sell_position_matches_financial_oracle(authenticated_api):
         activity = response.json()
         created_ids.append(activity["id"])
 
-        if trade.side == "BUY":
-            profile = activity["assetProfile"]
+        profile = activity["assetProfile"]
+        assert profile["dataSource"] == "MANUAL"
 
-            assert profile["dataSource"] == "MANUAL"
+        if index == 0:
+            assert trade.side == "BUY"
             assert profile["name"] == symbol
-
             symbol = profile["symbol"]
+        else:
+            assert profile["symbol"] == symbol
 
     activities_response = client.get(
         "/api/v1/activities",
