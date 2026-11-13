@@ -4,6 +4,9 @@ import httpx
 import pytest
 
 
+pytestmark = pytest.mark.integration
+
+
 @pytest.fixture(scope="module")
 def api_client():
     base_url = os.getenv(

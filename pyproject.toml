@@ -15,4 +15,8 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --strict-markers"
+markers = [
+    "unit: deterministic tests independent of Ghostfolio",
+    "integration: tests requiring a running Ghostfolio instance",
+]

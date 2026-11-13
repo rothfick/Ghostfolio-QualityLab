@@ -5,6 +5,8 @@ import pytest
 from quality_lab.financial_oracle import Trade, calculate_ledger
 
 
+pytestmark = pytest.mark.unit
+
 D = Decimal
 
 
